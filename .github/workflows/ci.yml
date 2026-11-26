@@ -10,11 +10,12 @@ env:
   VENV: /home/user/.ci-venv
 
 jobs:
-  build:
-    name: Lint & tests
+  ci-cd:
+    name: Lint, tests and deploy
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
+
       - name: Install dependencies (cached venv)
         run: |
           test -x "$VENV/bin/python" || python3 -m venv "$VENV"
@@ -26,18 +27,15 @@ jobs:
           else
             echo "Dependencies unchanged, using cached venv"
           fi
+
       - name: flake8
         run: $VENV/bin/python -m flake8 --max-line-length=120 --exclude=.git,__pycache__,.venv .
+
       - name: pytest
         run: $VENV/bin/python -m pytest -q
 
-  deploy:
-    name: Deploy to production
-    needs: build
-    runs-on: [self-hosted, linux]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Publish and restart service
+      - name: Deploy to production
+        if: github.ref == 'refs/heads/main'
         run: |
           mkdir -p "$DEPLOY_DIR"
           rsync -a --delete \
