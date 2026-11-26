@@ -10,8 +10,8 @@ env:
   VENV: /home/user/.ci-venv
 
 jobs:
-  ci-cd:
-    name: Lint, tests and deploy
+  test:
+    name: Lint & tests
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
@@ -34,8 +34,15 @@ jobs:
       - name: pytest
         run: $VENV/bin/python -m pytest -q
 
-      - name: Deploy to production
-        if: github.ref == 'refs/heads/main'
+  deploy:
+    name: Deploy to production
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish and restart service
         run: |
           mkdir -p "$DEPLOY_DIR"
           rsync -a --delete \
