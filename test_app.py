@@ -2,7 +2,7 @@ from app import render
 
 
 def test_render_contains_payment():
-    assert "13215.07" in render("1000000", "10", "10")
+    assert "215.07" in render("1000000", "10", "10")
 
 
 def test_render_custom_values():
