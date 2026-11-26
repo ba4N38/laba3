@@ -7,81 +7,38 @@ on:
 
 env:
   DEPLOY_DIR: /opt/mortgage-calculator
-  IMAGE_NAME: mortgage-calculator
-  CONTAINER_NAME: mortgage-calculator
+  VENV: /home/user/.ci-venv
 
 jobs:
-  lint:
-    name: Lint (flake8)
+  build:
+    name: Lint & tests
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
         run: |
-          python3 -m venv .venv
-          .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install -r requirements.txt
-      - name: Run flake8
-        run: .venv/bin/python -m flake8 --max-line-length=120 --exclude=.git,__pycache__,.venv .
-
-  test:
-    name: Tests (pytest)
-    needs: lint
-    runs-on: [self-hosted, linux]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install dependencies
-        run: |
-          python3 -m venv .venv
-          .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install -r requirements.txt
-      - name: Run pytest
-        run: .venv/bin/python -m pytest test_calculator.py -v
-
-  docker:
-    name: Docker build
-    needs: test
-    runs-on: [self-hosted, linux]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build image
-        run: docker build -t "$IMAGE_NAME:${{ github.sha }}" -t "$IMAGE_NAME:latest" .
-      - name: Smoke test inside image
-        run: docker run --rm "$IMAGE_NAME:latest" python -m pytest -q test_calculator.py
-      - name: Show image
-        run: docker image inspect "$IMAGE_NAME:latest" --format '{{.Id}} {{.Size}} bytes'
+          test -x "$VENV/bin/python" || python3 -m venv "$VENV"
+          "$VENV/bin/pip" install -q -r requirements.txt
+      - name: flake8
+        run: "$VENV/bin/python" -m flake8 --max-line-length=120 --exclude=.git,__pycache__,.venv .
+      - name: pytest
+        run: "$VENV/bin/python" -m pytest -q
 
   deploy:
     name: Deploy to production
-    needs: [test, docker]
-    if: github.ref == 'refs/heads/main'
+    needs: build
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
-      - name: Publish source to product contour
+      - name: Publish and restart service
         run: |
           mkdir -p "$DEPLOY_DIR"
-          rsync -av --delete \
+          rsync -a --delete \
             --exclude='.git' \
             --exclude='.venv' \
             --exclude='__pycache__' \
             --exclude='.pytest_cache' \
             ./ "$DEPLOY_DIR/"
-      - name: Rebuild and restart container
-        run: |
-          docker build -t "$IMAGE_NAME:latest" "$DEPLOY_DIR"
-          docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
-          docker run -d --name "$CONTAINER_NAME" --restart unless-stopped \
-            -p 8000:8000 "$IMAGE_NAME:latest"
-      - name: Smoke test product
-        run: |
-          for i in $(seq 1 20); do
-            if curl -fsS "http://127.0.0.1:8000/?principal=1000000&rate=10&years=10" | grep -q "13215.07"; then
-              echo "Product is up and calculates correctly"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Product smoke test failed"
-          docker logs "$CONTAINER_NAME"
-          exit 1
+          sudo -n systemctl restart mortgage-calculator
+          sleep 1
+          curl -fsS "http://127.0.0.1:8000/?principal=1000000&rate=10&years=10" | grep -q "13215.07"
