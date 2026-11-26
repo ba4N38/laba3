@@ -15,10 +15,17 @@ jobs:
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
-      - name: Install dependencies
+      - name: Install dependencies (cached venv)
         run: |
           test -x "$VENV/bin/python" || python3 -m venv "$VENV"
-          "$VENV/bin/pip" install -q -r requirements.txt
+          new_hash=$(sha256sum requirements.txt | cut -d' ' -f1)
+          old_hash=$(cat "$VENV/.requirements.sha" 2>/dev/null || true)
+          if [ "$new_hash" != "$old_hash" ]; then
+            "$VENV/bin/pip" install -q -r requirements.txt
+            echo "$new_hash" > "$VENV/.requirements.sha"
+          else
+            echo "Dependencies unchanged, using cached venv"
+          fi
       - name: flake8
         run: $VENV/bin/python -m flake8 --max-line-length=120 --exclude=.git,__pycache__,.venv .
       - name: pytest
